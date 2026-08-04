@@ -3,7 +3,7 @@
 # Retrieve docker images if needed
 if [ -f "${1:-.}/conf/presets" ]; then
     
-    jq -r '.docker[] | "\(.profile) \(.preload)"' "${1:-.}/conf/presets" | while read -r profile preload; do
+    jq -r '.docker // [] | .[] | "\(.profile) \(.preload)"' "${1:-.}/conf/presets" | while read -r profile preload; do
 
         echo "Processing profile: $profile with preload: $preload"
 
