@@ -143,7 +143,41 @@ if [ "$ARCH" != "noarch" ]; then
         mkdir -p $TOOLKIT/build_env
         cd $TOOLKIT/pkgscripts-ng/
         git checkout DSM$DSM || exit 1
-        ./EnvDeploy --version $DSM -p $ARCH >&2 || exit 1
+
+        # Optional: fetch the toolchain tarballs from a mirror instead of
+        # Synology's own download servers (dataupdate7.synology.com /
+        # global.synologydownload.com), which frequently stall or drop
+        # the connection mid-download. If TOOLCHAIN_MIRROR_URL is set and
+        # all required files are fetched successfully, pass -D so
+        # EnvDeploy uses them as-is instead of downloading from Synology.
+        # action.yaml's env-forwarding into the container relies on
+        # `${{ github.env }}`, which is not a real Actions context and
+        # resolves to nothing - so a workflow-level `env:` on the calling
+        # step never actually reaches this script. Default to our own
+        # mirror directly; still overridable if this script is ever run
+        # outside that container with the var genuinely exported.
+        TOOLCHAIN_MIRROR_URL="${TOOLCHAIN_MIRROR_URL:-https://github.com/PeterSuh-Q3/SynoSmartInfo/releases/download/TOOLCHAIN}"
+
+        DEPLOY_ARGS="--version $DSM -p $ARCH"
+        if [ -n "$TOOLCHAIN_MIRROR_URL" ]; then
+            TARBALL_DIR="$TOOLKIT/toolkit_tarballs"
+            mkdir -p "$TARBALL_DIR"
+            MIRROR_OK=1
+            for f in "base_env-$DSM.txz" "ds.$ARCH-$DSM.env.txz" "ds.$ARCH-$DSM.dev.txz"; do
+                if [ ! -f "$TARBALL_DIR/$f" ]; then
+                    echo "Fetching $f from $TOOLCHAIN_MIRROR_URL ..." >&2
+                    curl -fL --retry 5 --retry-delay 3 -o "$TARBALL_DIR/$f" "$TOOLCHAIN_MIRROR_URL/$f" || MIRROR_OK=0
+                fi
+            done
+            if [ "$MIRROR_OK" = "1" ]; then
+                echo "Using mirrored toolchain tarballs, skipping Synology download" >&2
+                DEPLOY_ARGS="--version $DSM -p $ARCH -D"
+            else
+                echo "Mirror fetch incomplete, falling back to Synology's own download" >&2
+            fi
+        fi
+
+        ./EnvDeploy $DEPLOY_ARGS >&2 || exit 1
         cd -
     else
         echo "Chroot environment for $ARCH-$DSM already exists" >&2
